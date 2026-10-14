@@ -121,18 +121,12 @@ impl App {
         let layouts =
             autoswitch::supervisor::layouts_for(&config.layouts, platform::imp::language_of);
 
-        #[cfg(windows)]
-        let handles = autoswitch::windows::layout_handles();
-        #[cfg(not(windows))]
-        let handles: Vec<isize> = Vec::new();
-
         autoswitch::supervisor::Supervisor::start(
             &autoswitch::supervisor::Settings {
                 lexicon_dir: self.lexicon_dir.clone(),
                 excluded_apps: config.auto_switch_excluded_apps.clone(),
             },
             &layouts,
-            &handles,
         )
     }
 

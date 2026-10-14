@@ -44,18 +44,13 @@ impl Supervisor {
     /// Starts watching, or explains why it cannot.
     ///
     /// `layouts` must be the layouts that take part in switching, each already
-    /// carrying the language of its word list. `handles` are the layouts of the
-    /// operating system, in the order it reports them.
-    pub fn start(
-        settings: &Settings,
-        layouts: &[Layout],
-        handles: &[isize],
-    ) -> Result<Self, String> {
-        // Exactly one of these blocks exists on any given platform, and each one is
-        // the value of the function.
+    /// carrying the language of its word list.
+    pub fn start(settings: &Settings, layouts: &[Layout]) -> Result<Self, String> {
+        // Exactly one of these blocks exists on any given platform, and each one
+        // is the value of the function.
         #[cfg(not(windows))]
         {
-            let _ = (settings, layouts, handles);
+            let _ = (settings, layouts);
             Err(UNSUPPORTED_REASON.unwrap_or_default().to_string())
         }
 
@@ -69,7 +64,9 @@ impl Supervisor {
                 );
             }
 
-            let keymap = super::windows::LayoutKeyMap::new(handles);
+            let handles = super::windows::handles_for(layouts)
+                .ok_or_else(|| "Не удалось прочитать идентификаторы раскладок.".to_string())?;
+            let keymap = super::windows::LayoutKeyMap::new(&handles);
             if keymap.usable() < 2 {
                 return Err("Не удалось прочитать установленные раскладки.".to_string());
             }
@@ -184,8 +181,12 @@ fn run(
     while !stopping.load(Ordering::SeqCst) {
         let press = match presses.recv_timeout(Duration::from_millis(200)) {
             Ok(press) => press,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                continue;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                break;
+            }
         };
 
         state.update(press);
@@ -248,6 +249,59 @@ fn run(
     }
 }
 
+#[cfg(windows)]
+#[test]
+fn the_real_layouts_and_word_lists_switch_russian_to_english() {
+    use crate::autoswitch::Detector;
+    use crate::autoswitch::windows::{LayoutKeyMap, layout_handles};
+
+    let handles = layout_handles();
+    let layouts: Vec<Layout> = handles
+        .iter()
+        .filter_map(|hkl| {
+            let id = format!("{:08x}", *hkl as u32);
+            let language = crate::platform::imp::language_of(&id)?;
+            (language == "ru" || language == "en").then(|| Layout::new(&id, &language))
+        })
+        .collect();
+
+    if layouts.len() < 2 {
+        // One layout on the machine: nothing to compare against.
+        return;
+    }
+
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/lexicon");
+    let lexicons = crate::autoswitch::lexicon::LexiconSet::load(&dir, &["ru", "en"]);
+    assert!(
+        lexicons.contains("ru"),
+        "the Russian word list must be there"
+    );
+
+    let keymap = LayoutKeyMap::new(&handles);
+    let russian = layouts
+        .iter()
+        .position(|layout| layout.language == "ru")
+        .expect("this test needs a Russian layout");
+    let english = layouts
+        .iter()
+        .position(|layout| layout.language == "en")
+        .expect("this test needs an English layout");
+
+    let mut detector = Detector::new(&layouts, &lexicons, &keymap, russian);
+
+    // What the Russian layout really puts on screen while the English word
+    // `hello` is being typed.
+    for ch in ['р', 'у', 'д', 'д', 'щ'] {
+        detector.on_char(ch);
+    }
+
+    assert_eq!(
+        detector.current(),
+        english,
+        "typing an English word on the Russian layout must switch to English"
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,7 +330,7 @@ mod tests {
             excluded_apps: Vec::new(),
         };
 
-        assert!(Supervisor::start(&settings, &layouts, &[0x0409_0419]).is_err());
+        assert!(Supervisor::start(&settings, &layouts).is_err());
     }
 
     #[cfg(windows)]

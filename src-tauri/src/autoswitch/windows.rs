@@ -43,8 +43,8 @@ const WM_QUIT: u32 = 0x0012;
 /// Virtual key of Backspace, used to erase the wrongly typed characters.
 const VK_BACK: u16 = 0x08;
 
-/// `MapVirtualKeyEx` mode: ask for the character a virtual key produces.
-const MAPVK_VK_TO_CHAR: u32 = 2;
+/// `MapVirtualKeyEx` mode: ask for the scan code a virtual key sits on.
+const MAPVK_VK_TO_VSC: u32 = 1;
 
 const KEYEVENTF_KEYUP: u32 = 0x0002;
 const KEYEVENTF_UNICODE: u32 = 0x0004;
@@ -212,7 +212,7 @@ const UIA_IS_PASSWORD_PROPERTY_ID: i32 = 30019;
 /// called below. Both interfaces start with the three `IUnknown` slots, so the
 /// numbers are the order the methods appear in the interface declarations.
 const IUNKNOWN_RELEASE: usize = 2;
-const IUIAUTOMATION_ELEMENT_FROM_HANDLE: usize = 6;
+const IUIAUTOMATION_GET_FOCUSED_ELEMENT: usize = 8;
 const IUIAUTOMATION_ELEMENT_GET_CURRENT_PROPERTY_VALUE: usize = 10;
 
 #[repr(C)]
@@ -260,6 +260,23 @@ pub fn layout_handles() -> Vec<isize> {
         .collect()
 }
 
+/// The raw layout handles for the given layouts, in the same order.
+///
+/// A layout id on Windows *is* the layout handle in hexadecimal, so the two
+/// can never drift apart. Building the table from the cycle rather than from
+/// every installed layout matters as soon as the user removes or reorders a
+/// layout: the table and the detector have to speak the same numbering.
+pub fn handles_for(layouts: &[super::Layout]) -> Option<Vec<isize>> {
+    layouts
+        .iter()
+        .map(|layout| {
+            u32::from_str_radix(&layout.id, 16)
+                .ok()
+                .map(|hkl| hkl as isize)
+        })
+        .collect()
+}
+
 /// Maps characters between two Windows layouts, built at run time.
 ///
 /// Nothing about a layout is assumed: every virtual key is asked what
@@ -294,15 +311,36 @@ impl LayoutKeyMap {
             return keys;
         }
 
-        for vk in 0x08..=0xfeu32 {
-            // SAFETY: a pure lookup on a live layout handle, writing nothing.
-            let produced = unsafe { MapVirtualKeyExW(vk, MAPVK_VK_TO_CHAR, hkl) };
+        // Every key is asked what it prints, with no modifier held down. This
+        // has to be `ToUnicodeEx`: `MapVirtualKeyEx` in its
+        // `MAPVK_VK_TO_CHAR` mode answers from the calling thread's layout and
+        // hands back the English letter even when handed a Russian handle.
+        let state = [0u8; 256];
 
-            // Dead keys and unbound keys come back as 0xFFFF or 0.
-            if produced == 0 || produced == 0xffff {
+        for vk in 0x08..=0xfeu32 {
+            // SAFETY: both calls are pure lookups on a live layout handle, and
+            // the state array is the 256 bytes the API documents.
+            let (scan, produced, first) = unsafe {
+                let scan = MapVirtualKeyExW(vk, MAPVK_VK_TO_VSC, hkl);
+                let mut buffer = [0u16; 4];
+                let produced = ToUnicodeEx(
+                    vk,
+                    scan,
+                    state.as_ptr(),
+                    buffer.as_mut_ptr(),
+                    buffer.len() as i32,
+                    0,
+                    hkl,
+                );
+                (scan, produced, buffer[0])
+            };
+
+            let _ = scan;
+            // -1 is a dead key, 0 means the key prints nothing.
+            if produced != 1 {
                 continue;
             }
-            let Some(ch) = char::from_u32(produced) else {
+            let Some(ch) = char::from_u32(u32::from(first)) else {
                 continue;
             };
             if ch.is_alphabetic() {
@@ -543,8 +581,6 @@ unsafe extern "system" fn hook_callback(code: i32, w_param: WPARAM, l_param: LPA
         )
     };
 
-    // Our own corrections are not input, they are output; letting them through
-    // would make the detector read its own repairs.
     if !own_correction {
         // Keep the callback short: a slow hook is removed by Windows.
         SINK.with(|sink| {
@@ -594,15 +630,15 @@ impl PasswordGuard {
         if handle != self.checked {
             self.checked = handle;
             self.focused_is_blocked =
-                self.is_password_field(foreground).unwrap_or(true) || self.is_denied(foreground);
+                self.is_password_field().unwrap_or(true) || self.is_denied(foreground);
         }
 
         self.focused_is_blocked
     }
 
-    /// Asks UI Automation whether the element under the keyboard is a password
-    /// box. `None` means the question could not be answered.
-    fn is_password_field(&self, window: HWND) -> Option<bool> {
+    /// Asks UI Automation whether the element that currently has the keyboard is a
+    /// password box. `None` means the question could not be answered.
+    fn is_password_field(&self) -> Option<bool> {
         // SAFETY: the vtable slots and signatures are described above and come
         // from the interface declarations in `uiautomationclient.h`.
         unsafe {
@@ -624,15 +660,14 @@ impl PasswordGuard {
 
             // Every COM call takes the object itself as `this`, not its
             // vtable; passing the vtable crashes the process.
+            // The focused element is the one that receives typing. Asking the
+            // window instead gives the window, which answers questions about
+            // itself and knows nothing about the field inside it.
             let mut element: *mut c_void = std::ptr::null_mut();
             let got = {
-                let from_handle: unsafe extern "system" fn(
-                    *mut c_void,
-                    *mut c_void,
-                    *mut *mut c_void,
-                ) -> i32 =
-                    std::mem::transmute(Self::slot(automation, IUIAUTOMATION_ELEMENT_FROM_HANDLE));
-                from_handle(automation, window, &mut element)
+                let focused: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32 =
+                    std::mem::transmute(Self::slot(automation, IUIAUTOMATION_GET_FOCUSED_ELEMENT));
+                focused(automation, &mut element)
             };
             if got < 0 || element.is_null() {
                 Self::release(automation);
@@ -872,9 +907,14 @@ mod tests {
         assert_eq!(KeyMap::translate(&map, 0, 0, 'a'), None);
     }
 
-    /// The real check of the whole idea: on a machine that has both an English
-    /// and a Russian layout, `A` must read as `ф` on the Russian one and back
-    /// again on the English one.
+    /// Every key that prints a letter on both layouts has to mean the same thing
+    /// both ways, which is what switching relies on: the character on screen is
+    /// looked up in the table of the layout it was typed on, and read again
+    /// through the key it sits on.
+    ///
+    /// Keys that print a letter on one layout and a sign on the other are fine
+    /// and expected — the Russian `ё` and `э` sit where a US keyboard has
+    /// grave and tilde — so only the shared letters are checked.
     #[test]
     fn the_live_layouts_translate_each_other() {
         let layouts = installed_layouts();
@@ -885,30 +925,35 @@ mod tests {
             return;
         }
 
-        let mut checked = 0;
-        for (origin, source) in layouts.iter().enumerate() {
-            // SAFETY: the same call `character_of` makes, on a live layout.
-            let here = unsafe { character_on(*source, 0x41, &KeyboardState::new()) };
-            let Some(here) = here else {
-                continue;
-            };
+        let mut shared = 0;
+        for origin in 0..map.usable() {
+            let target = (origin + 1) % map.usable();
+            let keys: Vec<(u32, char)> = map.by_layout[origin]
+                .iter()
+                .map(|(vk, ch)| (*vk, *ch))
+                .collect();
 
-            for target in 0..layouts.len() {
-                if target == origin {
+            for (vk, letter) in keys {
+                // Only interesting where the other layout prints a letter too.
+                let Some(there) = map.by_layout[target].get(&vk).copied() else {
                     continue;
-                }
+                };
+                shared += 1;
 
                 assert_eq!(
-                    map.translate(origin, target, here),
-                    map.translate(target, origin, here),
-                    "`{here}` must read the same way on both layouts"
+                    KeyMap::translate(&map, origin, target, letter),
+                    Some(there),
+                    "key {vk:#x} prints `{letter}` on layout {origin} and `{there}` on {target}"
                 );
-                checked += 1;
+                assert_eq!(
+                    KeyMap::translate(&map, target, origin, there),
+                    Some(letter),
+                    "`{there}` must lead back to `{letter}`"
+                );
             }
         }
 
-        // A machine with two identical layouts proves nothing.
-        assert!(checked > 0 || map.usable() < 2);
+        assert!(shared > 10, "only {shared} shared letters were checked");
     }
 
     /// The character a virtual key produces on a layout, for the tests.
@@ -991,9 +1036,7 @@ mod tests {
         // crash rather than fail. What the focused window answers is not up
         // to the test, so only the shape of the answer is checked.
         let guard = PasswordGuard::new(&[]);
-        for _ in 0..3 {
-            let _ = guard.is_password_field(foreground);
-        }
+        let _answer = guard.is_password_field();
     }
 
     #[test]
