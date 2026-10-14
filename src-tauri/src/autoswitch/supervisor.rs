@@ -174,9 +174,61 @@ fn run(
     /// typed is one shorter afterwards.
     const VK_BACK: u32 = 0x08;
 
+    /// How long typing has to pause before a switch is carried out, in
+    /// milliseconds.
+    ///
+    /// Short enough to feel instant, long enough for a burst of fast typing to
+    /// finish. Without it the repair works from a character count that is stale
+    /// by the time the keystrokes are sent.
+    const SETTLE_MS: u64 = 60;
+
+    // Set `KLATZ_VERBOSE=1` to log every character the detector sees.
+    let verbose = std::env::var_os("KLATZ_VERBOSE").is_some();
+
     let mut state = KeyboardState::new();
     let mut guard = PasswordGuard::new(excluded);
     let mut detector = Detector::new(layouts, lexicons, keymap, 0);
+
+    // Feeds one keystroke to the detector and returns what it decided.
+    //
+    // Nothing is applied here: a decision is only acted on once typing has
+    // gone quiet, because by then the characters to erase have to be looked
+    // at again.
+    fn handle(
+        press: super::windows::KeyPress,
+        state: &mut super::windows::KeyboardState,
+        detector: &mut Detector,
+        verbose: bool,
+    ) -> Decision {
+        state.update(press);
+        if press.released {
+            return Decision::Keep;
+        }
+
+        if press.vk_code == VK_BACK {
+            detector.backspace();
+            return Decision::Keep;
+        }
+
+        match character_of(
+            press,
+            state,
+            super::windows::LayoutKeyMap::foreground_layout(),
+        ) {
+            Some(ch) => {
+                if verbose {
+                    eprintln!("klatz: '{}'", ch);
+                }
+                detector.on_char(ch)
+            }
+            // Arrows, function keys and the like type nothing, but they do
+            // end the word as far as the detector is concerned.
+            None => {
+                detector.reset();
+                Decision::Keep
+            }
+        }
+    }
 
     while !stopping.load(Ordering::SeqCst) {
         let press = match presses.recv_timeout(Duration::from_millis(200)) {
@@ -189,46 +241,38 @@ fn run(
             }
         };
 
-        state.update(press);
-        if press.released {
-            continue;
-        }
-
         // A password field is none of our business: no switch, and not even a
         // look at what is being typed there.
         if guard.blocks_switching(foreground_window()) {
+            state.update(press);
             detector.reset();
             continue;
         }
 
-        if press.vk_code == VK_BACK {
-            detector.backspace();
+        if !matches!(
+            handle(press, &mut state, &mut detector, verbose),
+            Decision::Switch { .. }
+        ) {
             continue;
         }
 
-        let decision = match character_of(
-            press,
-            &state,
-            super::windows::LayoutKeyMap::foreground_layout(),
-        ) {
-            Some(ch) => detector.on_char(ch),
-            // Arrows, function keys and the like type nothing, but they do
-            // end the word as far as the detector is concerned.
-            None => {
-                detector.reset();
-                Decision::Keep
-            }
-        };
+        // The decision was made from the characters typed so far, and the user
+        // is very likely still typing. Acting now would erase characters that
+        // have since been added and are no longer the ones that are wrong, so
+        // the burst is let to finish first.
+        std::thread::sleep(Duration::from_millis(SETTLE_MS));
 
-        let Decision::Switch {
-            layout,
-            erase,
-            retype,
-        } = decision
-        else {
+        while let Ok(press) = presses.try_recv() {
+            if guard.blocks_switching(foreground_window()) {
+                detector.reset();
+                continue;
+            }
+            let _ = handle(press, &mut state, &mut detector, verbose);
+        }
+
+        let Some((layout, erase, retype)) = detector.pending_switch() else {
             continue;
         };
-
         let Some(target) = layouts.get(layout) else {
             continue;
         };
@@ -246,14 +290,15 @@ fn run(
         // The repair is typed as unicode, which no layout interferes with, so
         // it lands correctly whichever order the layout change finishes in.
         Corrector::send(erase, &retype);
+        detector.applied(layout, &retype);
     }
 }
 
 #[cfg(windows)]
 #[test]
 fn the_real_layouts_and_word_lists_switch_russian_to_english() {
-    use crate::autoswitch::Detector;
     use crate::autoswitch::windows::{LayoutKeyMap, layout_handles};
+    use crate::autoswitch::{Decision, Detector};
 
     let handles = layout_handles();
     let layouts: Vec<Layout> = handles
@@ -292,7 +337,9 @@ fn the_real_layouts_and_word_lists_switch_russian_to_english() {
     // What the Russian layout really puts on screen while the English word
     // `hello` is being typed.
     for ch in ['р', 'у', 'д', 'д', 'щ'] {
-        detector.on_char(ch);
+        if let Decision::Switch { layout, retype, .. } = detector.on_char(ch) {
+            detector.applied(layout, &retype);
+        }
     }
 
     assert_eq!(

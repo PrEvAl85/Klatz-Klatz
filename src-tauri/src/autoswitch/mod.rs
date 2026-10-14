@@ -101,6 +101,30 @@ impl<'a> Detector<'a> {
         self.current
     }
 
+    /// The switch the current fragment calls for, without changing anything.
+    ///
+    /// This is what to ask once typing has gone quiet: the fragment may have grown
+    /// since the last decision, and the characters to erase have to match what is
+    /// on screen at the moment of the repair.
+    pub fn pending_switch(&self) -> Option<(usize, usize, String)> {
+        match self.evaluate()? {
+            Decision::Switch {
+                layout,
+                erase,
+                retype,
+            } => Some((layout, erase, retype)),
+            _ => None,
+        }
+    }
+
+    /// Records that a switch was carried out, so that the fragment matches the
+    /// text now on screen.
+    pub fn applied(&mut self, layout: usize, retype: &str) {
+        self.current = layout;
+        self.fragment = retype.to_string();
+        self.since_switch = 0;
+    }
+
     /// Forgets the word being typed, because something that is not a character
     /// ended it: a space, a comma, an arrow key, or the focus moving away.
     pub fn reset(&mut self) {
@@ -116,8 +140,10 @@ impl<'a> Detector<'a> {
 
     /// Feeds one typed character to the detector and returns what to do.
     ///
-    /// The detector updates its own state before returning, so the caller can
-    /// apply the decision to the keyboard and carry on.
+    /// The detector does not act on its own decision: the characters to erase have
+    /// to match what is on screen at the moment of the repair, which may be a few
+    /// keystrokes later. The caller calls [`Detector::applied`] once it has done
+    /// it, and can ask for a fresh decision with [`Detector::pending_switch`].
     pub fn on_char(&mut self, ch: char) -> Decision {
         if !ch.is_alphabetic() {
             let had_fragment = !self.fragment.is_empty();
@@ -136,17 +162,7 @@ impl<'a> Detector<'a> {
         // switch" and must not wrap around on the first keystroke.
         self.since_switch = self.since_switch.saturating_add(1);
 
-        match self.evaluate() {
-            Some(decision) => {
-                if let Decision::Switch { layout, retype, .. } = &decision {
-                    self.current = *layout;
-                    self.fragment.clone_from(retype);
-                    self.since_switch = 0;
-                }
-                decision
-            }
-            None => Decision::Keep,
-        }
+        self.evaluate().unwrap_or(Decision::Keep)
     }
 
     /// The switch this fragment calls for, if any.
@@ -309,10 +325,23 @@ mod tests {
                     erase: 3,
                     retype: "tod".to_string(),
                 },
-                Decision::Keep,
-                Decision::Keep,
-            ]
+                Decision::Switch {
+                    layout: 0,
+                    erase: 4,
+                    retype: "toda".to_string(),
+                },
+                Decision::Switch {
+                    layout: 0,
+                    erase: 5,
+                    retype: "today".to_string(),
+                },
+            ],
+            "each keystroke re-reports the switch with what is on screen now"
         );
+
+        // The detector does not move on its own: the caller carries the repair
+        // out and says so.
+        detector.applied(0, "today");
         assert_eq!(detector.current(), 0);
     }
 
@@ -336,9 +365,14 @@ mod tests {
                     erase: 2,
                     retype: "до".to_string(),
                 },
-                Decision::Keep,
+                Decision::Switch {
+                    layout: 1,
+                    erase: 3,
+                    retype: "дом".to_string(),
+                },
             ]
         );
+        detector.applied(1, "дом");
         assert_eq!(detector.current(), 1);
     }
 
@@ -411,6 +445,46 @@ mod tests {
     }
 
     #[test]
+    fn a_pending_switch_follows_the_text_that_is_on_screen() {
+        let layouts = vec![english_layout(), russian_layout()];
+        let (lexicons, keymap) = fixtures();
+        let mut detector = detector(&layouts, &lexicons, &keymap, 1);
+
+        // "Today" on a Russian layout puts `ещвдщ` on screen; the first three
+        // characters already rule Russian out, so a switch is decided while the
+        // word is still being typed.
+        let decisions: Vec<Decision> = ['е', 'щ', 'в']
+            .into_iter()
+            .map(|ch| detector.on_char(ch))
+            .collect();
+
+        assert!(
+            decisions
+                .iter()
+                .any(|decision| matches!(decision, Decision::Switch { .. }))
+        );
+
+        // But the user keeps typing before anyone acts on it, and now there are
+        // five wrong characters on screen rather than three: `ещвфн`.
+        let _ = detector.on_char('ф');
+        let _ = detector.on_char('н');
+
+        let (layout, erase, retype) = detector
+            .pending_switch()
+            .expect("the switch is still warranted");
+
+        assert_eq!(layout, 0);
+        assert_eq!(
+            erase, 5,
+            "every wrong character has to go, not the three seen earlier"
+        );
+        assert_eq!(retype, "today");
+
+        detector.applied(layout, &retype);
+        assert_eq!(detector.current(), 0);
+    }
+
+    #[test]
     fn the_switcher_keeps_its_place_after_a_switch() {
         let layouts = vec![english_layout(), russian_layout()];
         let (lexicons, keymap) = fixtures();
@@ -418,6 +492,7 @@ mod tests {
 
         type_word(&mut detector, &keymap, 0, 1, "today");
 
+        detector.applied(0, "today");
         assert_eq!(detector.current(), 0);
         // The rest of the same word must not send it straight back.
         let decisions = type_word(&mut detector, &keymap, 0, 0, "ay");
