@@ -17,6 +17,7 @@
 
 pub mod keymap;
 pub mod lexicon;
+pub mod windows;
 
 use keymap::KeyMap;
 use lexicon::{LexiconSet, Support};
