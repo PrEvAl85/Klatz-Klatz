@@ -8,15 +8,10 @@
 //! module still compiles and reports itself as unavailable, so nothing else in
 //! the app needs a `cfg` of its own.
 
-use super::lexicon::LexiconSet;
-use super::{Decision, Detector, Layout};
+use super::Layout;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
-
-/// Virtual key of Backspace: it removes a character, so the word being typed is
-/// one shorter afterwards.
-const VK_BACK: u32 = 0x08;
 
 /// Whether this build can watch the keyboard at all.
 pub const SUPPORTED: bool = cfg!(windows);
@@ -56,14 +51,18 @@ impl Supervisor {
         layouts: &[Layout],
         handles: &[isize],
     ) -> Result<Self, String> {
+        // Exactly one of these blocks exists on any given platform, and each one is
+        // the value of the function.
         #[cfg(not(windows))]
         {
             let _ = (settings, layouts, handles);
-            return Err(UNSUPPORTED_REASON.unwrap_or_default().to_string());
+            Err(UNSUPPORTED_REASON.unwrap_or_default().to_string())
         }
 
         #[cfg(windows)]
         {
+            use super::lexicon::LexiconSet;
+
             if layouts.len() < 2 {
                 return Err(
                     "Для автоматического переключения нужно хотя бы две раскладки.".to_string(),
@@ -163,7 +162,7 @@ pub fn layouts_for(ids: &[String], language_of: impl Fn(&str) -> Option<String>)
 fn run(
     presses: std::sync::mpsc::Receiver<super::windows::KeyPress>,
     layouts: &[Layout],
-    lexicons: &LexiconSet,
+    lexicons: &super::lexicon::LexiconSet,
     keymap: &super::windows::LayoutKeyMap,
     excluded: &[String],
     stopping: &AtomicBool,
@@ -171,7 +170,12 @@ fn run(
     use super::windows::{
         Corrector, KeyboardState, PasswordGuard, character_of, foreground_window,
     };
+    use super::{Decision, Detector};
     use std::time::Duration;
+
+    /// Virtual key of Backspace: it removes a character, so the word being
+    /// typed is one shorter afterwards.
+    const VK_BACK: u32 = 0x08;
 
     let mut state = KeyboardState::new();
     let mut guard = PasswordGuard::new(excluded);
