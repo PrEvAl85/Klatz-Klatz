@@ -1,11 +1,16 @@
 //! Klatz-Klatz — cross-platform keyboard layout switcher.
 //!
-//! The crate is split into three layers:
+//! The crate is split into four layers:
 //!
 //! - [`config`] — persisted user settings,
 //! - [`layouts`] — platform-independent data model and cycle maths,
+//! - [`autoswitch`] — deciding on its own when the layout has to change,
 //! - [`platform`] — the only code that knows about Win32 / X11 / Carbon.
 
+// Automatic switching is built and tested but not wired into the tray yet:
+// the platform layer has to learn to observe the keyboard first.
+#[allow(dead_code)]
+mod autoswitch;
 mod config;
 mod layouts;
 mod platform;
