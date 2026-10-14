@@ -69,14 +69,17 @@ so automatic switching cannot run there at all.
 
 ## Installation
 
-Download the build for your platform from the [Releases](https://github.com/PrEvAl85/Klatz-Klatz/releases) page:
+Download the build for your platform from the [Releases](https://github.com/PrEvAl85/Klatz-Klatz/releases) page.
+
+**v0.2.0 ships the Windows installer only.** macOS and Linux builds are produced by the same
+workflow and appear in later releases; see [platform limitations](#platform-limitations).
 
 | Platform | File |
 |-----------|------|
-| Windows | `Klatz-Klatz_0.1.0_x64-setup.exe` (NSIS) or `Klatz-Klatz_0.1.0_x64_en-US.msi` |
-| macOS (Apple Silicon) | `Klatz-Klatz_0.1.0_aarch64.dmg` |
-| macOS (Intel) | `Klatz-Klatz_0.1.0_x64.dmg` |
-| Linux | `Klatz-Klatz_0.1.0_amd64.AppImage`, `Klatz-Klatz_0.1.0_amd64.deb` |
+| Windows | `Klatz-Klatz_0.2.0_x64-setup.exe` (NSIS) or `Klatz-Klatz_0.2.0_x64_en-US.msi` |
+| macOS (Apple Silicon) | `Klatz-Klatz_0.2.0_aarch64.dmg` |
+| macOS (Intel) | `Klatz-Klatz_0.2.0_x64.dmg` |
+| Linux | `Klatz-Klatz_0.2.0_amd64.AppImage`, `Klatz-Klatz_0.2.0_amd64.deb` |
 
 > **Windows SmartScreen (unsigned EXE).** The Windows builds are not signed with a digital
 > certificate (code signing is paid), so Windows may show "Windows protected your PC" on first
@@ -85,7 +88,7 @@ Download the build for your platform from the [Releases](https://github.com/PrEv
 > - click **"More info" → "Run anyway"** (one-time);
 > - or remove the "downloaded from the internet" mark: right-click the file → **Properties** →
 >   check **"Unblock"** → OK;
-> - or run `Unblock-File Klatz-Klatz_0.1.0_x64-setup.exe` in PowerShell.
+> - or run `Unblock-File Klatz-Klatz_0.2.0_x64-setup.exe` in PowerShell.
 
 > **macOS.** The first launch may require permission to control the keyboard. If layouts do not
 > switch, check **System Settings → Privacy & Security → Accessibility**.

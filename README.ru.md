@@ -69,14 +69,18 @@
 
 ## Установка
 
-Скачайте сборку для вашей платформы со страницы [Releases](https://github.com/PrEvAl85/Klatz-Klatz/releases):
+Скачайте сборку для вашей платформы со страницы [Releases](https://github.com/PrEvAl85/Klatz-Klatz/releases).
+
+**В версии 0.2.0 собирается только Windows.** Сборки для macOS и Linux делает тот же воркфлоу и
+они появятся в следующих релизах; ограничения платформ — в разделе
+[«Ограничения платформ»](#ограничения-платформ).
 
 | Платформа | Файл |
 |-----------|------|
-| Windows | `Klatz-Klatz_0.1.0_x64-setup.exe` (NSIS) или `Klatz-Klatz_0.1.0_x64_en-US.msi` |
-| macOS (Apple Silicon) | `Klatz-Klatz_0.1.0_aarch64.dmg` |
-| macOS (Intel) | `Klatz-Klatz_0.1.0_x64.dmg` |
-| Linux | `Klatz-Klatz_0.1.0_amd64.AppImage`, `Klatz-Klatz_0.1.0_amd64.deb` |
+| Windows | `Klatz-Klatz_0.2.0_x64-setup.exe` (NSIS) или `Klatz-Klatz_0.2.0_x64_en-US.msi` |
+| macOS (Apple Silicon) | `Klatz-Klatz_0.2.0_aarch64.dmg` |
+| macOS (Intel) | `Klatz-Klatz_0.2.0_x64.dmg` |
+| Linux | `Klatz-Klatz_0.2.0_amd64.AppImage`, `Klatz-Klatz_0.2.0_amd64.deb` |
 
 > **Windows SmartScreen (неподписанный exe).** Сборки Windows не подписаны цифровым сертификатом
 > (подпись платная), поэтому Windows при первом запуске может показать «Windows защитил ваш
@@ -85,7 +89,7 @@
 > - нажмите **«Подробнее» → «Выполнить в любом случае»** (одноразово);
 > - или снимите пометку «скачано из интернета»: ПКМ по файлу → **Свойства** → галочка
 >   **«Разблокировать»** → ОК;
-> - либо из PowerShell: `Unblock-File Klatz-Klatz_0.1.0_x64-setup.exe`.
+> - либо из PowerShell: `Unblock-File Klatz-Klatz_0.2.0_x64-setup.exe`.
 
 > **macOS.** При первом запуске системе может потребоваться разрешение на доступ к клавиатуре. Если
 > раскладка не переключается, проверьте **Системные настройки → Конфиденциальность и

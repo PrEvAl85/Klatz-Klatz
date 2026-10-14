@@ -4,25 +4,59 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    # Run this from the tag you want to release: the tag is taken from the ref
+    # the workflow was started on.
+    inputs:
+      windows_only:
+        description: "Build the Windows installer only"
+        type: boolean
+        default: true
 
 jobs:
+  # Decides what to build before any runner is claimed: a tag pushes every
+  # platform, a manual run can be narrowed down to one.
+  plan:
+    name: Choose the targets
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      note: ${{ steps.plan.outputs.note }}
+    steps:
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          WINDOWS_ONLY: ${{ inputs.windows_only }}
+        run: |
+          WINDOWS='[{"platform":"windows-latest","target":"x86_64-pc-windows-msvc"}]'
+          ALL='[
+            {"platform":"windows-latest","target":"x86_64-pc-windows-msvc"},
+            {"platform":"macos-latest","target":"aarch64-apple-darwin"},
+            {"platform":"macos-latest","target":"x86_64-apple-darwin"},
+            {"platform":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu"}
+          ]'
+
+          if [ "$EVENT" = "workflow_dispatch" ] && [ "$WINDOWS_ONLY" = "true" ]; then
+            echo "matrix=$WINDOWS" >> "$GITHUB_OUTPUT"
+            {
+              echo "note=Сборка только для Windows."
+              echo ""
+              echo "macOS и Linux в этом релизе не собираются."
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix=$ALL" >> "$GITHUB_OUTPUT"
+            echo "note=Сборки для всех поддерживаемых платформ." >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     name: ${{ matrix.platform }}
+    needs: plan
     permissions:
       contents: write
 
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
-          - platform: macos-latest
-            target: aarch64-apple-darwin
-          - platform: macos-latest
-            target: x86_64-apple-darwin
-          - platform: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
 
     runs-on: ${{ matrix.platform }}
 
@@ -66,6 +100,9 @@ jobs:
           releaseBody: |
             Готовые сборки Klatz-Klatz — переключателя раскладки клавиатуры.
             / Ready builds of Klatz-Klatz, the keyboard layout switcher.
+
+            ${{ needs.plan.outputs.note }}
+            / ${{ needs.plan.outputs.note }}
 
             Скачайте нужный файл / Pick your file:
             * Windows — `*_setup.exe` или `.msi`
