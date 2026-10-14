@@ -19,6 +19,15 @@ const hotkeyBtn = el<HTMLButtonElement>("#hotkey-btn");
 const hotkeyResetBtn = el<HTMLButtonElement>("#hotkey-reset");
 const switchOnClick = el<HTMLInputElement>("#switch-on-click");
 const autostart = el<HTMLInputElement>("#autostart");
+const autoSwitch = el<HTMLInputElement>("#auto-switch");
+const autoSwitchNote = el<HTMLParagraphElement>("#auto-switch-note");
+const autoSwitchExcludedBlock = el<HTMLDetailsElement>(
+  "#auto-switch-excluded-block",
+);
+const autoSwitchExcluded = el<HTMLInputElement>("#auto-switch-excluded");
+const autoSwitchExcludedSave = el<HTMLButtonElement>(
+  "#auto-switch-excluded-save",
+);
 const statusEl = el<HTMLSpanElement>("#status");
 
 let state: AppState | null = null;
@@ -77,6 +86,27 @@ function renderSwitches(): void {
   switchOnClick.checked = state.config.switchOnClick;
   autostart.checked = state.config.autostart;
   cycleBtn.disabled = !state.supported || state.config.layouts.length < 2;
+}
+
+function renderAutoSwitch(): void {
+  if (!state) return;
+
+  autoSwitch.checked = state.config.autoSwitch;
+  autoSwitch.disabled = !state.autoSwitchAvailable;
+
+  // Two different problems, so two different messages: the feature is not
+  // built for this platform, or it failed to start here and now.
+  const note = !state.autoSwitchAvailable
+    ? "Автоматическое переключение работает только на Windows"
+    : state.autoSwitchError;
+
+  autoSwitchNote.hidden = note === null;
+  if (note) autoSwitchNote.textContent = note;
+
+  autoSwitchExcludedBlock.hidden = !state.autoSwitchAvailable;
+  if (document.activeElement !== autoSwitchExcluded) {
+    autoSwitchExcluded.value = state.config.autoSwitchExcludedApps.join(", ");
+  }
 }
 
 function makeLayoutItem(layout: LayoutInfo): HTMLLIElement {
@@ -211,6 +241,7 @@ function render(): void {
   renderCurrent();
   renderHotkey();
   renderSwitches();
+  renderAutoSwitch();
   renderLayouts();
 }
 
@@ -224,10 +255,16 @@ async function saveLayoutOrder(order: string[]): Promise<void> {
   render();
 }
 
-async function runCommand(command: string, args?: Record<string, unknown>) {
-  state = await invoke<AppState>(command, args);
-  render();
-  return state;
+async function runCommand<T = AppState>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  const result = await invoke<T>(command, args);
+  if (result !== undefined) {
+    state = result as AppState;
+    render();
+  }
+  return result;
 }
 
 function isModifier(code: string): boolean {
@@ -331,6 +368,39 @@ autostart.addEventListener("change", async () => {
     await runCommand("set_autostart", { value });
   } catch (err) {
     autostart.checked = !value;
+    setStatus(String(err), true);
+  }
+});
+
+autoSwitch.addEventListener("change", async () => {
+  const value = autoSwitch.checked;
+  try {
+    state = await runCommand<AppState>("set_auto_switch", { value });
+    renderAutoSwitch();
+    setStatus(
+      value
+        ? "Автоматическое переключение включено"
+        : "Автоматическое переключение выключено",
+    );
+  } catch (err) {
+    autoSwitch.checked = !value;
+    setStatus(String(err), true);
+  }
+});
+
+autoSwitchExcludedSave.addEventListener("click", async () => {
+  const apps = autoSwitchExcluded.value
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+
+  try {
+    state = await runCommand<AppState>("set_auto_switch_excluded_apps", {
+      apps,
+    });
+    renderAutoSwitch();
+    setStatus("Список исключений сохранён");
+  } catch (err) {
     setStatus(String(err), true);
   }
 });

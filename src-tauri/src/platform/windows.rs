@@ -87,6 +87,62 @@ pub fn supported() -> (bool, Option<String>) {
     (true, None)
 }
 
+/// The language a layout belongs to, as a two-letter tag, read from the locale
+/// half of the layout handle.
+///
+/// Automatic switching needs to know which word list applies to a layout, and
+/// the answer is already written into the layout id: the low word of an `HKL`
+/// is a `LANGID`, whose primary part identifies the language. Guessing from the
+/// keyboard alone would be a guess.
+pub fn language_of(id: &str) -> Option<String> {
+    let hkl = u32::from_str_radix(id, 16).ok()?;
+    // The low word of an `HKL` is the locale and the high word is the keyboard
+    // layout; `04090419` is the Russian locale on a US keyboard, which is why
+    // the two halves both have to be read to tell layouts apart.
+    let locale = hkl & 0xFFFF;
+    let primary = locale & 0x03ff;
+
+    LANGID_TO_TAG
+        .iter()
+        .find(|(langid, _)| *langid == primary)
+        .map(|(_, tag)| (*tag).to_string())
+}
+
+/// Primary `LANGID` values for the languages that ship a word list. Only the
+/// primary part matters: `de-AT` and `de-CH` are German for this purpose.
+const LANGID_TO_TAG: &[(u32, &str)] = &[
+    (0x009, "en"),
+    (0x019, "ru"),
+    (0x007, "de"),
+    (0x00c, "fr"),
+    (0x00a, "es"),
+    (0x010, "it"),
+    (0x016, "pt"),
+    (0x015, "pl"),
+    (0x005, "cs"),
+    (0x01b, "sk"),
+    (0x022, "uk"),
+    (0x002, "bg"),
+    // Croatian and Serbian share the primary language id 0x1a; one row can
+    // only win, and the two are interchangeable for language detection.
+    (0x01a, "sr"),
+    (0x024, "sl"),
+    (0x01f, "tr"),
+    (0x018, "ro"),
+    (0x00e, "hu"),
+    (0x01d, "sv"),
+    (0x006, "da"),
+    (0x014, "no"),
+    (0x00b, "fi"),
+    (0x00f, "is"),
+    (0x013, "nl"),
+    (0x008, "el"),
+    (0x003, "ca"),
+    (0x021, "id"),
+    (0x02a, "vi"),
+    (0x056, "gl"),
+];
+
 pub fn available() -> Result<Vec<LayoutInfo>> {
     unsafe {
         let count = GetKeyboardLayoutList(0, core::ptr::null_mut());

@@ -13,6 +13,10 @@ export interface Config {
   hotkey: string;
   switchOnClick: boolean;
   autostart: boolean;
+  /** Whether the layout follows the language being typed. */
+  autoSwitch: boolean;
+  /** Executable names automatic switching stays out of. */
+  autoSwitchExcludedApps: string[];
 }
 
 /** Snapshot returned by the `get_state` command. */
@@ -25,6 +29,10 @@ export interface AppState {
   unsupportedReason: string | null;
   /** Why the global hotkey is not registered, if registration failed. */
   hotkeyError: string | null;
+  /** Whether this build can follow the language being typed. */
+  autoSwitchAvailable: boolean;
+  /** Why automatic switching did not start, when it was asked for. */
+  autoSwitchError: string | null;
   current: string | null;
   config: Config;
 }

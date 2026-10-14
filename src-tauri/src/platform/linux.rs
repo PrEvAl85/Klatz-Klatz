@@ -128,6 +128,15 @@ fn name_for(id: &str, known: &[(String, String)]) -> String {
         .unwrap_or_else(|| id.to_string())
 }
 
+/// The language a layout belongs to.
+///
+/// Automatic switching is not implemented on Linux yet, so the layout id is
+/// never asked for a language today; the function exists so the backend keeps
+/// the same shape as the others.
+pub fn language_of(_id: &str) -> Option<String> {
+    None
+}
+
 pub fn supported() -> (bool, Option<String>) {
     let session = std::env::var("XDG_SESSION_TYPE")
         .unwrap_or_default()

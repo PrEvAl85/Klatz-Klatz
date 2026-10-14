@@ -17,6 +17,7 @@
 
 pub mod keymap;
 pub mod lexicon;
+pub mod supervisor;
 pub mod windows;
 
 use keymap::KeyMap;
@@ -98,6 +99,19 @@ impl<'a> Detector<'a> {
 
     pub fn current(&self) -> usize {
         self.current
+    }
+
+    /// Forgets the word being typed, because something that is not a character
+    /// ended it: a space, a comma, an arrow key, or the focus moving away.
+    pub fn reset(&mut self) {
+        self.fragment.clear();
+        self.since_switch = usize::MAX;
+    }
+
+    /// Takes back one character, because the user erased it.
+    pub fn backspace(&mut self) {
+        self.fragment.pop();
+        self.since_switch = self.since_switch.saturating_add(1);
     }
 
     /// Feeds one typed character to the detector and returns what to do.

@@ -39,10 +39,16 @@ struct LayoutChanged {
 
 struct App {
     config_dir: PathBuf,
+    /// Where the bundled word lists were unpacked.
+    lexicon_dir: PathBuf,
     config: Mutex<Config>,
     /// A busy or malformed hotkey must never stop the app from running, so
     /// the failure is remembered and surfaced in the settings window instead.
     hotkey_error: Mutex<Option<String>>,
+    /// Running automatic switching, if the user asked for it.
+    auto_switch: Mutex<Option<autoswitch::supervisor::Supervisor>>,
+    /// Why automatic switching is not running, when it should be.
+    auto_switch_error: Mutex<Option<String>>,
 }
 
 impl App {
@@ -66,6 +72,70 @@ impl App {
         *self.hotkey_error.lock().expect("hotkey mutex poisoned") = error;
     }
 
+    /// Starts automatic switching if the settings ask for it, and stops it if
+    /// they no longer do.
+    ///
+    /// Restarting rather than reconfiguring keeps the watcher simple: it is
+    /// cheap to build and impossible to get half-way into a new state.
+    fn refresh_auto_switch(&self, config: &Config) {
+        let mut running = self.auto_switch.lock().expect("auto switch mutex poisoned");
+
+        if !config.auto_switch {
+            running.take();
+            return;
+        }
+        if running.is_some() {
+            return;
+        }
+
+        match self.start_auto_switch(config) {
+            Ok(supervisor) => {
+                eprintln!(
+                    "klatz: автоматическое переключение включено ({} раскладок)",
+                    autoswitch::supervisor::layouts_for(
+                        &config.layouts,
+                        platform::imp::language_of
+                    )
+                    .len()
+                );
+                *running = Some(supervisor);
+                *self
+                    .auto_switch_error
+                    .lock()
+                    .expect("auto switch mutex poisoned") = None;
+            }
+            Err(error) => {
+                eprintln!("klatz: {error}");
+                *self
+                    .auto_switch_error
+                    .lock()
+                    .expect("auto switch mutex poisoned") = Some(error);
+            }
+        }
+    }
+
+    fn start_auto_switch(
+        &self,
+        config: &Config,
+    ) -> Result<autoswitch::supervisor::Supervisor, String> {
+        let layouts =
+            autoswitch::supervisor::layouts_for(&config.layouts, platform::imp::language_of);
+
+        #[cfg(windows)]
+        let handles = autoswitch::windows::layout_handles();
+        #[cfg(not(windows))]
+        let handles: Vec<isize> = Vec::new();
+
+        autoswitch::supervisor::Supervisor::start(
+            &autoswitch::supervisor::Settings {
+                lexicon_dir: self.lexicon_dir.clone(),
+                excluded_apps: config.auto_switch_excluded_apps.clone(),
+            },
+            &layouts,
+            &handles,
+        )
+    }
+
     fn snapshot(&self) -> AppState {
         let config = self.config();
         let (supported, unsupported_reason) = platform::imp::supported();
@@ -78,6 +148,12 @@ impl App {
                 .hotkey_error
                 .lock()
                 .expect("hotkey mutex poisoned")
+                .clone(),
+            auto_switch_available: autoswitch::supervisor::SUPPORTED,
+            auto_switch_error: self
+                .auto_switch_error
+                .lock()
+                .expect("auto switch mutex poisoned")
                 .clone(),
             current: platform::imp::current().ok().flatten(),
             config,
@@ -316,6 +392,41 @@ fn cycle_layout(app: AppHandle) -> Result<AppState, String> {
     cycle(&app)
 }
 
+/// Turns automatic switching on or off.
+///
+/// A failed start is not fatal and not rolled back: the preference is kept, the
+/// reason is shown, and the watcher is tried again the next time the settings
+/// change — a machine that had only one layout installed can grow a second.
+#[tauri::command]
+fn set_auto_switch(app: AppHandle, value: bool) -> Result<AppState, String> {
+    let state = app.state::<App>();
+    let mut config = state.config();
+    config.auto_switch = value;
+    state.set_config(config.clone())?;
+    state.refresh_auto_switch(&config);
+    refresh_tray(&app);
+
+    Ok(state.snapshot())
+}
+
+#[tauri::command]
+fn set_auto_switch_excluded_apps(app: AppHandle, apps: Vec<String>) -> Result<AppState, String> {
+    let state = app.state::<App>();
+    let mut config = state.config();
+
+    // Compare on the lower-cased form, which is how the guard reads the names.
+    config.auto_switch_excluded_apps = apps
+        .iter()
+        .map(|name| name.trim().to_lowercase())
+        .filter(|name| !name.is_empty())
+        .collect();
+
+    state.set_config(config.clone())?;
+    state.refresh_auto_switch(&config);
+
+    Ok(state.snapshot())
+}
+
 // ---------------------------------------------------------------------------
 // Global hotkey
 // ---------------------------------------------------------------------------
@@ -362,6 +473,8 @@ pub fn run() {
             set_switch_on_click,
             set_autostart,
             cycle_layout,
+            set_auto_switch,
+            set_auto_switch_excluded_apps,
         ])
         .on_menu_event(|app, event| handle_menu_event(app, event.id().as_ref()))
         .setup(|app| {
@@ -381,10 +494,19 @@ pub fn run() {
                 eprintln!("klatz: {err}");
             }
 
+            let lexicon_dir = handle
+                .path()
+                .resource_dir()
+                .map(|dir| dir.join("lexicon"))
+                .unwrap_or_else(|_| PathBuf::from("lexicon"));
+
             app.manage(App {
                 config_dir,
+                lexicon_dir,
                 config: Mutex::new(config),
                 hotkey_error: Mutex::new(None),
+                auto_switch: Mutex::new(None),
+                auto_switch_error: Mutex::new(None),
             });
 
             let menu = build_menu(&handle)?;
@@ -445,6 +567,12 @@ pub fn run() {
             }
 
             refresh_tray(&handle);
+
+            // Automatic switching is opt-in, so this only does something when
+            // the user has already asked for it.
+            handle
+                .state::<App>()
+                .refresh_auto_switch(&handle.state::<App>().config());
 
             // Autostart must stay invisible in the tray; a normal launch opens
             // the settings window so a first-time user sees something.

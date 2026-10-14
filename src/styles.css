@@ -21,6 +21,7 @@
     --text-dim: #6b7280;
     --accent: #2563eb;
     --accent-dim: #1d4ed8;
+    --danger: #c53030;
   }
 }
 
@@ -100,6 +101,45 @@ body {
 
 .hint {
   margin: 0 0 10px;
+}
+
+.hint.error {
+  color: var(--danger);
+}
+
+/* A warning that only appears when something went wrong, such as automatic
+   switching failing to start. */
+#auto-switch-note {
+  color: var(--danger);
+}
+
+.summary {
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  flex: 1;
+  font: inherit;
+  font-size: 13px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .current {

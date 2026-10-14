@@ -20,6 +20,13 @@ pub struct Config {
     pub switch_on_click: bool,
     /// Whether the app is registered to start with the session.
     pub autostart: bool,
+    /// Whether the layout follows the language being typed.
+    ///
+    /// Off by default: watching every keystroke is a decision the user has to
+    /// make, and the feature is pointless with a single layout.
+    pub auto_switch: bool,
+    /// Executable names automatic switching must stay out of, lower-cased.
+    pub auto_switch_excluded_apps: Vec<String>,
 }
 
 impl Default for Config {
@@ -29,8 +36,30 @@ impl Default for Config {
             hotkey: DEFAULT_HOTKEY.to_string(),
             switch_on_click: true,
             autostart: false,
+            auto_switch: false,
+            auto_switch_excluded_apps: default_excluded_apps(),
         }
     }
+}
+
+/// Programs that handle secrets and where an automatic layout switch would be
+/// at best annoying and at worst a mistake.
+fn default_excluded_apps() -> Vec<String> {
+    [
+        "1password.exe",
+        "keepassxc.exe",
+        "keepass.exe",
+        "bitwarden.exe",
+        "enpass.exe",
+        "dashlane.exe",
+        "lastpass.exe",
+        "gnome-keyring-daemon.exe",
+        "seahorse.exe",
+        "kwallet.exe",
+        "loginwindow.exe",
+    ]
+    .map(str::to_string)
+    .to_vec()
 }
 
 impl Config {
@@ -134,6 +163,24 @@ mod tests {
         assert_eq!(parsed.hotkey, DEFAULT_HOTKEY);
         assert!(parsed.switch_on_click);
         assert!(!parsed.autostart);
+        assert!(!parsed.auto_switch);
+        assert!(
+            parsed
+                .auto_switch_excluded_apps
+                .contains(&"1password.exe".to_string())
+        );
+    }
+
+    #[test]
+    fn the_secret_keepers_are_left_out_by_default() {
+        let excluded = Config::default().auto_switch_excluded_apps;
+
+        assert!(
+            excluded.iter().any(|name| name == "keepassxc.exe"),
+            "password managers must not be watched"
+        );
+        // The guard compares names case-insensitively against this list.
+        assert!(excluded.iter().all(|name| *name == name.to_lowercase()));
     }
 
     #[test]

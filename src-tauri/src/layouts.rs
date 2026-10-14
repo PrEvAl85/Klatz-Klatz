@@ -21,6 +21,10 @@ pub struct AppState {
     pub unsupported_reason: Option<String>,
     /// Why the global hotkey is not registered, if registration failed.
     pub hotkey_error: Option<String>,
+    /// Whether this build can follow the language being typed.
+    pub auto_switch_available: bool,
+    /// Why automatic switching did not start, when it was asked for.
+    pub auto_switch_error: Option<String>,
     pub current: Option<String>,
     pub config: crate::config::Config,
 }

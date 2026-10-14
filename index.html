@@ -64,6 +64,46 @@
       <section class="card">
         <label class="switch-row">
           <span>
+            <span class="switch-title">Переключать автоматически по языку</span>
+            <span class="switch-desc"
+              >Раскладка меняется сама, когда вы начинаете печатать на другом
+              языке</span
+            >
+          </span>
+          <input id="auto-switch" type="checkbox" class="switch" />
+        </label>
+
+        <p id="auto-switch-note" class="hint" hidden></p>
+
+        <p class="hint">
+          Поля для пароля программа не трогает: она спрашивает у системы, не
+          является ли активное поле парольным, и молчит, если ответа нет.
+          Менеджеры паролей исключены по умолчанию.
+        </p>
+
+        <details id="auto-switch-excluded-block" hidden>
+          <summary class="summary">Исключённые программы</summary>
+          <p class="hint">
+            Имена файлов через запятую. В этих программах переключение не
+            выполняется.
+          </p>
+          <div class="row">
+            <input
+              id="auto-switch-excluded"
+              class="input"
+              type="text"
+              placeholder="1password.exe, keepassxc.exe"
+            />
+            <button id="auto-switch-excluded-save" class="btn btn-ghost" type="button">
+              Сохранить
+            </button>
+          </div>
+        </details>
+      </section>
+
+      <section class="card">
+        <label class="switch-row">
+          <span>
             <span class="switch-title">Переключать по клику на трей</span>
             <span class="switch-desc">Левая кнопка мыши сразу меняет раскладку</span>
           </span>

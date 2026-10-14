@@ -194,6 +194,16 @@ const CLSCTX_INPROC_SERVER: u32 = 0x1;
 /// `VT_BOOL`, the variant type `UIA_IsPasswordPropertyId` answers with.
 const VT_BOOL: u16 = 11;
 
+/// Marks the keystrokes this program synthesises itself.
+///
+/// A low-level hook sees them like any other key, so the detector would end up
+/// reading its own corrections. Only those events are filtered out: speech
+/// dictation and remote desktop inject keys too, and those are real input.
+const CORRECTION_MARKER: usize = 0x4b4c_4154_5a01;
+
+/// `LLKHF_INJECTED`, set on every event that was synthesised rather than typed.
+const LLKHF_INJECTED: u32 = 0x0000_0010;
+
 /// `UIA_IsPasswordPropertyId`. An element reports this as `true` when it is a
 /// password box, which is the contract every accessible control follows.
 const UIA_IS_PASSWORD_PROPERTY_ID: i32 = 30019;
@@ -229,6 +239,26 @@ const IID_UI_AUTOMATION: Guid = Guid {
 };
 
 // -- Layout translation -----------------------------------------------------
+
+/// The window that currently has the keyboard, if any.
+pub fn foreground_window() -> *mut c_void {
+    // SAFETY: the call has no preconditions and the handle is only used to ask
+    // questions about that window.
+    unsafe { GetForegroundWindow() }
+}
+
+/// The raw layout handles installed on the machine, in the order the operating
+/// system reports them.
+pub fn layout_handles() -> Vec<isize> {
+    let mut layouts = [0isize; 32];
+    // SAFETY: the buffer is the size the count is bounded by.
+    let count = unsafe { GetKeyboardLayoutList(layouts.len() as i32, layouts.as_mut_ptr()) };
+
+    (0..count.max(0) as usize)
+        .map(|index| layouts[index])
+        .filter(|hkl| *hkl != 0)
+        .collect()
+}
 
 /// Maps characters between two Windows layouts, built at run time.
 ///
@@ -316,6 +346,8 @@ pub struct KeyPress {
     pub vk_code: u32,
     pub scan_code: u32,
     pub released: bool,
+    /// Whether the event was synthesised by this program rather than typed.
+    pub injected: bool,
 }
 
 /// The keys that are down, mirroring what `GetKeyboardState` would report.
@@ -498,21 +530,29 @@ unsafe extern "system" fn hook_callback(code: i32, w_param: WPARAM, l_param: LPA
 
     // SAFETY: a hook guarantees `l_param` points at a KBDLLHOOKSTRUCT that
     // stays valid for the duration of the call.
-    let press = unsafe {
+    let (press, own_correction) = unsafe {
         let event = &*(l_param as *const KBDLLHOOKSTRUCT);
-        KeyPress {
-            vk_code: event.vk_code,
-            scan_code: event.scan_code,
-            released: up,
-        }
+        (
+            KeyPress {
+                vk_code: event.vk_code,
+                scan_code: event.scan_code,
+                released: up,
+                injected: event.flags & LLKHF_INJECTED != 0,
+            },
+            event.dw_extra_info == CORRECTION_MARKER,
+        )
     };
 
-    // Keep the callback short: a slow hook is removed by Windows.
-    SINK.with(|sink| {
-        if let Some(sender) = sink.borrow().as_ref() {
-            let _ = sender.send(press);
-        }
-    });
+    // Our own corrections are not input, they are output; letting them through
+    // would make the detector read its own repairs.
+    if !own_correction {
+        // Keep the callback short: a slow hook is removed by Windows.
+        SINK.with(|sink| {
+            if let Some(sender) = sink.borrow().as_ref() {
+                let _ = sender.send(press);
+            }
+        });
+    }
 
     next
 }
@@ -746,7 +786,7 @@ impl Corrector {
                     w_scan: 0,
                     dw_flags: u32::from(up) * KEYEVENTF_KEYUP,
                     time: 0,
-                    dw_extra_info: 0,
+                    dw_extra_info: CORRECTION_MARKER,
                 },
             },
         }
@@ -767,7 +807,7 @@ impl Corrector {
                     w_scan: encoded[0],
                     dw_flags: KEYEVENTF_UNICODE | if up { KEYEVENTF_KEYUP } else { 0 },
                     time: 0,
-                    dw_extra_info: 0,
+                    dw_extra_info: CORRECTION_MARKER,
                 },
             },
         }
@@ -798,6 +838,7 @@ mod tests {
             vk_code: 0x41,
             scan_code: 0x1e,
             released: false,
+            injected: false,
         };
         let up = KeyPress {
             released: true,
@@ -817,6 +858,7 @@ mod tests {
             vk_code: 0x41,
             scan_code: 0x1e,
             released: true,
+            injected: false,
         };
 
         assert_eq!(character_of(press, &KeyboardState::new(), 0), None);

@@ -24,6 +24,49 @@ updates. Settings are a single JSON file next to your other app configs.
   Klatz-Klatz keeps running and shows the problem in the UI instead of refusing to start.
 - **Zero-install footprint** — no service, no background daemon, no admin rights.
 
+## Automatic switching by language
+
+Optional, off by default, Windows only. Type the beginning of an English word while the Russian
+layout is active and Klatz-Klatz notices that the text cannot be Russian, switches to the English
+layout and **fixes the letters it already got wrong** — the word you meant appears, instead of a
+row of Cyrillic that has to be deleted by hand.
+
+It works by looking at the same physical keys rather than at the letters: on a Russian layout the
+English word `Today` arrives as `ещвфн`, and those keys read `today` on a US layout. The layout
+table is built at run time from the layouts you have installed, so AZERTY, QWERTZ, Dvorak and any
+other layout are handled without a lookup table in the source.
+
+**Languages** are read from the layouts themselves — the layout id already carries the locale, so
+nothing has to be assigned by hand. Word lists ship for 29 languages:
+
+| Script | Languages |
+| --- | --- |
+| Cyrillic | Russian, Ukrainian, Bulgarian, Serbian, Slovenian |
+| Western European | English, German, French, Spanish, Italian, Portuguese, Dutch, Catalan, Galician |
+| Central and Eastern Europe | Polish, Czech, Slovak, Hungarian, Romanian, Turkish |
+| Nordic | Swedish, Danish, Norwegian, Finnish, Icelandic |
+| Greek | Greek |
+| South-East Asia | Indonesian, Vietnamese |
+
+Detection is at its best between alphabets that do not share letters, which in practice means
+Russian ↔ English. Between two Latin languages there is more to be ambiguous about, so it needs
+slightly longer words before it acts.
+
+### Password fields
+
+Nothing is typed into a password field, and nothing typed there is inspected:
+
+- Klatz-Klatz asks the system whether the focused element is a password box, and stays silent when
+  the system cannot answer — a question it cannot answer is treated as "yes, it is a password".
+- Password managers are excluded by default; the list is editable in the settings.
+- The window that answers is remembered until the focus moves, so the check costs nothing per
+  keystroke.
+- The text itself never leaves the buffer of the current word: it is never written to disk, never
+  sent anywhere, and forgotten at the end of the word.
+
+Windows' own secure desktop (the UAC prompt) never hands keys to a global hook in the first place,
+so automatic switching cannot run there at all.
+
 ## Installation
 
 Download the build for your platform from the [Releases](https://github.com/PrEvAl85/Klatz-Klatz/releases) page:
@@ -118,12 +161,16 @@ Stored next to your other app configs:
   "layouts": ["04090419", "04190419"],
   "hotkey": "CmdOrCtrl+Shift+Space",
   "switchOnClick": true,
-  "autostart": false
+  "autostart": false,
+  "autoSwitch": false,
+  "autoSwitchExcludedApps": ["1password.exe", "keepassxc.exe"]
 }
 ```
 
 `layouts` is the cycle order exactly as you arranged it in the window, not a copy of the system
-list, so your custom order survives restarts.
+list, so your custom order survives restarts. `autoSwitchExcludedApps` is replaced wholesale when
+you save it from the settings window, and the list that ships with the app is a starting point
+rather than a fixed list.
 
 ## Technical details
 
@@ -131,6 +178,9 @@ list, so your custom order survives restarts.
 - **Plugins:** `tauri-plugin-global-shortcut` (hotkey), `tauri-plugin-autostart` (startup).
 - **Storage:** local JSON, written atomically; nothing ever leaves the computer.
 - **Security:** strict CSP, no remote content, no shell-out except `setxkbmap` on Linux X11.
+- **Word lists:** `src-tauri/resources/lexicon/*.txt`, 10 000 words per language, generated from a
+  public corpus. They are data files rather than compiled-in tables, and their provenance is
+  recorded in [SOURCES.md](src-tauri/resources/lexicon/SOURCES.md).
 
 ## Project structure
 
@@ -140,7 +190,15 @@ src-tauri/
   src/lib.rs              tray, global hotkey, commands for the UI
   src/config.rs           settings and their atomic save
   src/layouts.rs          layout model and cycle logic (covered by tests)
+  src/autoswitch/         deciding on its own when the layout has to change
+    mod.rs                the detector: text in, decision out
+    lexicon.rs            word lists and what they say about a fragment
+    keymap.rs             the same physical key on another layout
+    windows.rs            hook, character reading, password fields, repair
+    supervisor.rs         the loop that ties the above together
   src/platform/           windows.rs / linux.rs / macos.rs
+  resources/lexicon/      word lists, 29 languages
+tools/fetch-lexicons.ps1  regenerates the word lists
 ```
 
 ---

@@ -117,6 +117,15 @@ fn name_of(source: CFTypeRef, id: &str) -> String {
     localized.unwrap_or_else(|| fallback.to_string())
 }
 
+/// The language a layout belongs to.
+///
+/// Automatic switching is not implemented on macOS yet, so the input source id
+/// is never asked for a language today; the function exists so the backend
+/// keeps the same shape as the others.
+pub fn language_of(_id: &str) -> Option<String> {
+    None
+}
+
 pub fn supported() -> (bool, Option<String>) {
     (true, None)
 }

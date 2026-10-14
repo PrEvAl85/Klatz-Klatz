@@ -1,12 +1,13 @@
 //! Platform backends.
 //!
-//! Every backend exposes the same four functions so the rest of the app never
+//! Every backend exposes the same five functions so the rest of the app never
 //! needs `cfg` checks:
 //!
 //! - `supported() -> (bool, Option<String>)`
 //! - `available() -> Result<Vec<LayoutInfo>>`
 //! - `current() -> Result<Option<String>>`
 //! - `switch_to(id: &str) -> Result<()>`
+//! - `language_of(id: &str) -> Option<String>`
 
 /// Backend results are plain strings: they end up in the UI status bar, and a
 /// `thiserror` dependency would buy nothing for an app with no error taxonomy.
