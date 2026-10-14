@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Klatz-Klatz</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="container">
+      <header class="header">
+        <h1>Klatz-Klatz</h1>
+        <p class="subtitle">Переключение раскладки клавиатуры</p>
+      </header>
+
+      <div id="banner" class="banner" hidden></div>
+
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">Текущая раскладка</span>
+        </div>
+        <div class="current">
+          <span id="current-layout" class="current-name">—</span>
+          <button id="cycle-btn" class="btn btn-primary" type="button">
+            Переключить
+          </button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">Раскладки в цикле</span>
+          <span class="card-hint">Перетащите, чтобы изменить порядок</span>
+        </div>
+        <p class="hint">
+          Порядок определяет, в какой последовательности они переключаются.
+          Снимите галочку, чтобы исключить раскладку из цикла.
+        </p>
+        <ul id="layout-list" class="layout-list"></ul>
+        <p id="layout-empty" class="empty" hidden>
+          Раскладки не найдены.
+        </p>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">Горячая клавиша</span>
+        </div>
+        <p class="hint">
+          Нажмите кнопку и нажмите нужную комбинацию.
+        </p>
+        <div class="row">
+          <button id="hotkey-btn" class="btn hotkey" type="button">
+            — not set —
+          </button>
+          <button id="hotkey-reset" class="btn btn-ghost" type="button">
+            Сбросить
+          </button>
+        </div>
+      </section>
+
+      <section class="card">
+        <label class="switch-row">
+          <span>
+            <span class="switch-title">Переключать по клику на трей</span>
+            <span class="switch-desc">Левая кнопка мыши сразу меняет раскладку</span>
+          </span>
+          <input id="switch-on-click" type="checkbox" class="switch" />
+        </label>
+
+        <label class="switch-row">
+          <span>
+            <span class="switch-title">Запускать при старте системы</span>
+            <span class="switch-desc">Автоматически открывать Klatz-Klatz в фоне</span>
+          </span>
+          <input id="autostart" type="checkbox" class="switch" />
+        </label>
+      </section>
+
+      <footer class="footer">
+        <span id="status" class="status">Готово</span>
+      </footer>
+    </main>
+  </body>
+</html>

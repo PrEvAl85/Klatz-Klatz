@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Tray-only app: no Dock icon, no menu bar. -->
+    <key>LSUIElement</key>
+    <true/>
+    <!-- Klatz-Klatz has no windows that load remote content, but the WebView
+         still needs an explicit permission for the default data detectors. -->
+    <key>NSHumanReadableCopyright</key>
+    <string>MIT licensed, Klatz-Klatz contributors</string>
+  </dict>
+</plist>
