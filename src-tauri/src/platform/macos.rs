@@ -24,7 +24,7 @@ const CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
 const KEYBOARD_LAYOUT_PREFIX: &str = "com.apple.keylayout";
 
 #[link(name = "Carbon", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     static kTISPropertyInputSourceID: CFStringRef;
     static kTISPropertyLocalizedName: CFStringRef;
 
@@ -39,7 +39,7 @@ extern "C" {
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
-extern "C" {
+unsafe extern "C" {
     fn CFArrayGetCount(the_array: CFArrayRef) -> CFIndex;
     fn CFArrayGetValueAtIndex(the_array: CFArrayRef, index: CFIndex) -> CFTypeRef;
     fn CFStringGetLength(the_string: CFStringRef) -> CFIndex;
@@ -153,12 +153,17 @@ pub fn current() -> Result<Option<String>> {
 }
 
 pub fn switch_to(id: &str) -> Result<()> {
+    // `with_sources` reports whether the enumeration itself succeeded, so its
+    // result is nested: `None` when the call failed, `Some(None)` when the
+    // layout is simply not installed.
     if let Some(source) = with_sources(|sources| {
         sources
             .iter()
             .copied()
             .find(|source| id_of(*source).as_deref() == Some(id))
-    }) {
+    })
+    .flatten()
+    {
         let status = unsafe { TISSelectInputSource(source) };
         return check_status(status, id);
     }
