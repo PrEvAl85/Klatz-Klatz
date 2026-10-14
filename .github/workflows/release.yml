@@ -7,14 +7,17 @@ on:
     # Run this from the tag you want to release: the tag is taken from the ref
     # the workflow was started on.
     inputs:
-      windows_only:
-        description: "Build the Windows installer only"
+      all_platforms:
+        description: "Also build macOS and Linux, not only Windows"
         type: boolean
-        default: true
+        default: false
 
 jobs:
-  # Decides what to build before any runner is claimed: a tag pushes every
-  # platform, a manual run can be narrowed down to one.
+  # Decides what to build before any runner is claimed.
+  #
+  # A tagged push builds the Windows installer only: automatic switching, the
+  # headline of this release, works on Windows alone. Building the rest is one
+  # checkbox on a manual run, from the same tag.
   plan:
     name: Choose the targets
     runs-on: ubuntu-latest
@@ -24,8 +27,7 @@ jobs:
     steps:
       - id: plan
         env:
-          EVENT: ${{ github.event_name }}
-          WINDOWS_ONLY: ${{ inputs.windows_only }}
+          ALL_PLATFORMS: ${{ inputs.all_platforms }}
         run: |
           WINDOWS='[{"platform":"windows-latest","target":"x86_64-pc-windows-msvc"}]'
           ALL='[
@@ -35,16 +37,12 @@ jobs:
             {"platform":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu"}
           ]'
 
-          if [ "$EVENT" = "workflow_dispatch" ] && [ "$WINDOWS_ONLY" = "true" ]; then
-            echo "matrix=$WINDOWS" >> "$GITHUB_OUTPUT"
-            {
-              echo "note=Сборка только для Windows."
-              echo ""
-              echo "macOS и Linux в этом релизе не собираются."
-            } >> "$GITHUB_OUTPUT"
-          else
+          if [ "$ALL_PLATFORMS" = "true" ]; then
             echo "matrix=$ALL" >> "$GITHUB_OUTPUT"
-            echo "note=Сборки для всех поддерживаемых платформ." >> "$GITHUB_OUTPUT"
+            echo "note=Сборки для всех поддерживаемых платформ: Windows, macOS и Linux." >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix=$WINDOWS" >> "$GITHUB_OUTPUT"
+            echo "note=Сборка только для Windows; macOS и Linux в этом релизе не собираются." >> "$GITHUB_OUTPUT"
           fi
 
   build:
