@@ -2,6 +2,12 @@ MIT License
 
 Copyright (c) 2026 Klatz-Klatz contributors
 
+This licence covers the source code of the project.
+
+It does not cover the word lists in `src-tauri/resources/lexicon/`: those are
+derived from a third-party corpus and are distributed under CC BY-SA 4.0. Their
+provenance is recorded in `src-tauri/resources/lexicon/SOURCES.md`.
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
